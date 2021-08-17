@@ -82,6 +82,18 @@ optProb.addObj("obj")
 print(optProb)
 
 # Optimizer
+optOptions["stopCriteria"]=1
+optOptions["stopIters"]=2
+optOptions["maxInnerIter"]=100 
+optOptions["maxOuterIter"]=500 
+optOptions["dynInnerIter"]=1
+optOptions["itol"]=1e-2
+optOptions["etol"]=5e-2
+optOptions["dtol"]=5e-1
+optOptions["printOuterIters"]=1
+#optOptions["SwarmSize"]=10
+optOptions["xinit"]=1
+#optOptions['parallelType']='EXT'
 opt = OPT(args.opt, options=optOptions)
 
 # Solution

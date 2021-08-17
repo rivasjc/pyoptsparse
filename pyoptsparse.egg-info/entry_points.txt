@@ -1,0 +1,4 @@
+[gui_scripts]
+optview = pyoptsparse.postprocessing.OptView:main
+optview_dash = pyoptsparse.postprocessing.OptView_dash:main
+

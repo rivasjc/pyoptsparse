@@ -310,15 +310,50 @@ class Optimizer(BaseSolver):
         # broadcast to know what to do.
 
         args = [x, evaluate]
+        print('_masterFunc, args = {}'.format(args))
 
         # Broadcast the type of call (0 means regular call)
         self.optProb.comm.bcast(0, root=0)
 
         # Now broadcast out the required arguments:
-        self.optProb.comm.bcast(args)
+if rank == 0:
+   data = [(x+1)**x for x in range(size)]
+   print 'we will be scattering:',data
+else:
+   data = None
+        if rank == 0:
+        lenX=len(args[0])
+        posX=0
+        size = self.optProb.comm.Get_size()
+        while lenX>0:
+
+            if lenX>size:
+                args2=[]
+                for i in range(size): args2.append([args[0][posX+i],args[1]])  
+                lenX -= size
+            else:
+                args2=[]
+                for i in range(lenX): args2.append([c[posX+i],args[1]]) 
+                lenX = 0
+        self.optProb.comm.bcast(args, root=0)
+
+        if rank != 0:
+            index_local = 0
+            result1=np.array([])
+            for i in range(lenX//size):
+                if size*i+rank>=lenX: break
+                args2 = [args[0][size*i+rank],args[1]]
+                result2 = self._masterFunc2(*args2)
+                if len(result1)==0: result1=result2
+                else: result1=np.array([np.stack(result1[0],result2[0]),np.stack(result1[1],result2[1]),result1[2]])
+sendbuf2 = recvbuf
+recvbuf2 = np.zeros(sum(count))
+comm.Gatherv(sendbuf2, [recvbuf2, count, displ, MPI.DOUBLE], root=0)
+
 
         result = self._masterFunc2(*args)
         self.interfaceTime += time.time() - timeA
+        print('_masterFunc, result = ',result)
         return result
 
     def _masterFunc2(self, x, evaluate, writeHist=True):
@@ -326,6 +361,8 @@ class Optimizer(BaseSolver):
         Another shell function. This function is now actually called
         on all the processors.
         """
+        print('_masterFunc2, x={}, evaluate={}'.format(x,evaluate))
+        
 
         # Our goal in this function is to return the values requested
         # in 'evaluate' for the corresponding x. We have to be a
