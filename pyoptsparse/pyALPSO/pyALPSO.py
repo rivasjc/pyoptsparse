@@ -12,6 +12,7 @@ import numpy as np
 from ..pyOpt_error import Error
 from ..pyOpt_optimizer import Optimizer
 
+
 # isort: off
 
 
@@ -82,6 +83,7 @@ class ALPSO(Optimizer):
         return defOpts
 
     def __call__(self, optProb, storeHistory=None, **kwargs):
+
         """
         This is the main routine used to solve the optimization
         problem.
@@ -180,15 +182,21 @@ class ALPSO(Optimizer):
             # sol_inform['text'] = self.informs[inform[0]]
 
             # Create the optimization solution
-            sol = self._createSolution(optTime, sol_inform, opt_f, opt_x)
-        else:  # We are not on the root process so go into waiting loop:
-            self._waitLoop()
-            sol = None
 
-        # Communication solution and return
+            sol = self._createSolution(optTime, sol_inform, opt_f, opt_x)
+
+            # Communication solution and return
+
+        else:  # We are not on the root process so go into waiting loop:
+            sol = self._createSolution(0, {}, 0, 0) #dummy
+            self._waitLoop()
+
+#        self.optProb.comm.barrier()
+       
         sol = self._communicateSolution(sol)
 
-        return sol
+        if self.optProb.comm.rank == 0: return sol
+
 
     def _on_setOption(self, name, value):
         if name == "parallelType":
@@ -202,9 +210,9 @@ class ALPSO(Optimizer):
 
     def _communicateSolution(self, sol):
         if sol is not None:
-            sol.userObjCalls = self.optProb.comm.allreduce(sol.userObjCalls)
+            sol.userObjCalls = self.optProb.comm.reduce(sol.userObjCalls)
             sol.comm = None
-        sol = self.optProb.comm.bcast(sol)
+        sol=self.optProb.comm.bcast(sol)
         sol.objFun = self.optProb.objFun
         sol.comm = self.optProb.comm
 

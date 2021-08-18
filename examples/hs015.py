@@ -93,7 +93,7 @@ optOptions["dtol"]=5e-1
 optOptions["printOuterIters"]=1
 #optOptions["SwarmSize"]=10
 optOptions["xinit"]=1
-#optOptions['parallelType']='EXT'
+optOptions['parallelType']='EXT'
 opt = OPT(args.opt, options=optOptions)
 
 # Solution

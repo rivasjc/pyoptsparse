@@ -223,7 +223,10 @@ def alpso(dimensions, constraints, neqcons, xtype, x0, xmin, xmax, swarmsize, nh
         for m in discrete_i:
             xtmp[:, m] = floor(xtmp[:, m] + 0.5)
 
+        #print('alpso_ext, xtmp: ',xtmp)
         f, g = objfunc(xtmp)
+        #print('alpso_ext, f={}, g={} '.format(f, g))
+
         nfevals += swarmsize
 
     for i in range(swarmsize):

@@ -92,6 +92,9 @@ class Optimizer(BaseSolver):
         # Initialize metadata
         self.metadata: Dict[str, Any] = {}
 
+        #esto es mio
+        self.Returns=[]
+
     def _clearTimings(self):
         """Clear timings and call counters"""
         self.userObjTime = 0.0
@@ -310,71 +313,60 @@ class Optimizer(BaseSolver):
         # broadcast to know what to do.
 
         args = [x, evaluate]
-        print('_masterFunc, args = {}'.format(args))
+        #print('_masterFunc, args = {}'.format(args))
+
+        if self.optProb.comm.Get_size()==1:
+            self.interfaceTime += time.time() - timeA
+            result = self._masterFunc2(*args)
+            #print('_masterFunc, result = ',result)
+            return result
+
+
 
         # Broadcast the type of call (0 means regular call)
         self.optProb.comm.bcast(0, root=0)
 
         # Now broadcast out the required arguments:
+        self.optProb.comm.bcast(args)
 
-        size = self.optProb.comm.Get_size()
-        rank = self.optProb.comm.rank
-        self.optProb.comm.bcast(args, root=0)
+        self.Returns=[]
+        size=self.optProb.comm.Get_size()
+        N = len(x)//size
+        for i in range(N): 
+            #print('position: ',i)
+            args = [x[i], evaluate]
+            self._masterFunc2(*args)
+        state = MPI.Status()
+        cores=np.zeros(size)
+        cores[0]=1
+        while sum(cores)<size:
+            req = self.optProb.comm.irecv(source=MPI.ANY_SOURCE)
+            recvbuf= req.wait(status=state)
+            if cores[int(state.source)]==0:
+                cores[int(state.source)]=1
+                self.Returns += recvbuf
 
-        result=[]
+        self.interfaceTime += time.time() - timeA
+        #print('_masterFunc, self.Returns = ',self.Returns)
+        f,g,h=[],[],[]
+        for data in self.Returns:
+            f.append(data[0])
+            g.append(data[1])
+            h.append(data[2])
+        self.Returns=[]
+        f=np.array(f)
+        g=np.array(g)
+        h=np.array(h)
+        #print('_masterFunc, result = ',[f,g,h])
+        return [f,g,h]
 
-        if rank != 0:
-            index_local = 0
-            result1=np.array([])
-            for i in range(lenX//size):
-                if size*i+rank>=lenX: break
-                args2 = [args[0][size*i+rank],args[1]]
-                result2 = [size*i+rank, self._masterFunc2(*args2)]
-                if len(result1)==0: result1=result2
-                else: result1=np.array([np.stack(result1[0],result2[0]),np.stack(result1[1],result2[1]),np.stack(result1[2],result2[2]),np.stack(result1[3],result2[3])])
-            sendbuf = [rank,result1]
-            self.optProb.comm.send(sendbuf , dest=0)
-        else:
-            state = MPI.Status()
-            recvbuf = []
-            received=0
-            while received<size :
-                recvbuf.append(self.optProb.comm.recv(None, source=MPI.ANY_SOURCE, status=state))
-                received +=1
-            data0=[]
-            data1=[]
-            data2=[]
-            data3=[]
-            for data in recvbuf:
-                id=data[0]
-                res=data[1]
-                data0.append(res[0])
-                data1.append(res[1])
-                data2.append(res[2])
-                data3.append(res[3])
-            data0=np.array(data0).flatten()
-            data1=np.array(data1).flatten()
-            data2=np.array(data2).flatten()
-            data3=np.array(data3).flatten()
-            curated_data = np.stack([data1,data2,data3])
-            index = np.argsort(data0)
-            curated_data = curated_data[index]
-            result = [curated_data[0],curated_data[1],curated_data[2][0]]
-        self.optProb.comm.barrier() 
-        if rank != 0:
-            return
-        else:
-#        result = self._masterFunc2(*args)
-            self.interfaceTime += time.time() - timeA
-            print('_masterFunc, result = ',result)
-            return result
 
     def _masterFunc2(self, x, evaluate, writeHist=True):
         """
         Another shell function. This function is now actually called
         on all the processors.
         """
-        print('_masterFunc2, x={}, evaluate={}'.format(x,evaluate))
+        #print('_masterFunc2, x={}, evaluate={}'.format(x,evaluate))
         
 
         # Our goal in this function is to return the values requested
@@ -657,7 +649,8 @@ class Optimizer(BaseSolver):
 
         # Tack the fail flag on at the end
         returns.append(masterFail)
-
+        #print('_masterFunc2, returns: ',returns)
+        self.Returns.append(returns)
         return returns
 
     def _internalEval(self, x):
@@ -719,9 +712,13 @@ class Optimizer(BaseSolver):
     def _waitLoop(self):
         """Non-root processors go into this waiting loop while the
         root proc does all the work in the optimization algorithm"""
-
+        #print('_waitLoop')
         mode = None
         info = None
+
+        size = self.optProb.comm.Get_size()
+        rank = self.optProb.comm.rank
+
         while True:
             # * Note*: No checks for MPI here since this code is
             # * only run in parallel, which assumes mpi4py is working
@@ -734,9 +731,30 @@ class Optimizer(BaseSolver):
             # Otherwise receive info from shell function
             info = self.optProb.comm.bcast(info, root=0)
 
+
             # Call the generic internal function. We don't care
             # about return values on these procs
-            self._masterFunc2(*info)
+            self.Returns=[]
+
+            x=info[0]
+            evaluate=info[1]
+            lenX = len(x)
+            pos=rank*lenX//size
+
+            N = lenX//size
+#            if rank==size-1: 
+#                N += lenX%size
+            if rank<=lenX%size: N+=1
+
+            #print('N,size,rank',N,size,rank)
+            for i in range(N): 
+                #print('position: ',pos+i)
+                args = [x[pos+i],evaluate]
+                self._masterFunc2(*args)
+
+            self.optProb.comm.send(self.Returns, 0)
+            self.Returns=[]
+
 
     def _setInitialCacheValues(self):
         """
